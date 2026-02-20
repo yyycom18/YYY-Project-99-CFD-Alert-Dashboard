@@ -15,6 +15,7 @@ from .overlays import (
     add_impulse_rects,
     add_retracement_zone_rect,
     add_session_arrow,
+    add_weekly_star_markers,
     add_zone_rect,
 )
 
@@ -84,3 +85,6 @@ def plot_structure(
             add_session_arrow(fig, df.index[-1], float(df["high"].iloc[-1]), row, col, long_breakout=True)
         if data.get("session_breakout_short"):
             add_session_arrow(fig, df.index[-1], float(df["low"].iloc[-1]), row, col, long_breakout=False)
+
+    # Weekly high-score star markers (last 4 weeks) – 1H only
+    add_weekly_star_markers(fig, df, data.get("weekly_signal", []), row, col, size=10)

@@ -109,8 +109,78 @@ def deep_structure_view(asset: str, df_15m: pd.DataFrame, result: dict):
         show_fib=show_fib,
         show_session=show_session,
         show_blocking=show_blocking,
+        score_fn=score,
     )
     st.plotly_chart(fig, use_container_width=True)
+
+    # Patch 7 — Chart Legend (圖表圖形 / 顏色說明)
+    with st.expander("Chart Legend – 圖表圖形 / 顏色說明"):
+        legend_data = {
+            "Element": [
+                "Demand Zone",
+                "Supply Zone",
+                "Stop Hunt Zone",
+                "Stop Money",
+                "Blocking Level",
+                "Swing High",
+                "Swing Low",
+                "Weekly High Score",
+            ],
+            "Color / Shape": [
+                "Orange (transparent)",
+                "Grey (transparent)",
+                "Light Green / Light Red Band",
+                "Green / Red Dashed Line",
+                "Black Thick Line",
+                "Triangle Up",
+                "Triangle Down",
+                "Green / Red Star",
+            ],
+            "Meaning": [
+                "上升禁區",
+                "下降禁區",
+                "0.5–0.7 回調區域",
+                "前方流動性目標",
+                "大支持 / 大阻力",
+                "結構高點",
+                "結構低點",
+                "最近4週高分訊號",
+            ],
+        }
+        st.table(pd.DataFrame(legend_data))
+
+    # Patch 8 — Strategy Conditions (七大條件說明)
+    with st.expander("Strategy Conditions – 七大條件說明"):
+        conditions_data = {
+            "Condition": [
+                "Trend",
+                "Impulse Break",
+                "Stop Hunt",
+                "Stop Money",
+                "Zone",
+                "Fibonacci",
+                "Session",
+            ],
+            "Timeframe": [
+                "4H",
+                "1H",
+                "1H",
+                "1H",
+                "Multi TF",
+                "15M",
+                "1H",
+            ],
+            "Description": [
+                "判斷大方向（Higher High / Lower Low 結構）",
+                "原生動能破結構",
+                "回調 0.5–0.7 區域內流動性聚集",
+                "前方雙頂 / 雙底流動性目標",
+                "機構成本禁區",
+                "部署回調區域",
+                "EU / US 行為觸發確認",
+            ],
+        }
+        st.table(pd.DataFrame(conditions_data))
 
 
 def main():

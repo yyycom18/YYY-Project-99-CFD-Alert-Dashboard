@@ -207,3 +207,60 @@ def add_session_arrow(
         ),
         row=row, col=col,
     )
+
+
+def add_weekly_star_markers(
+    fig: go.Figure,
+    df: pd.DataFrame,
+    markers_list: List[Tuple[Any, str]],
+    row: int,
+    col: int,
+    size: int = 10,
+    offset_pct: float = 0.002,
+) -> None:
+    """
+    Weekly high-score stars: long = green star slightly below candle low; short = red star slightly above high.
+    markers_list: [(timestamp, 'long'|'short'), ...].
+    """
+    if not markers_list or df is None or df.empty:
+        return
+    df = df.rename(columns={c: c.lower() for c in df.columns if c.lower() in ("open", "high", "low", "close")})
+    if "high" not in df.columns or "low" not in df.columns:
+        return
+    idx = df.index
+    price_span = float(df["high"].max() - df["low"].min()) or 1.0
+    offset = price_span * offset_pct
+
+    long_x, long_y = [], []
+    short_x, short_y = [], []
+    for ts, side in markers_list:
+        try:
+            loc = idx.get_indexer([ts], method="nearest")[0]
+            if loc < 0 or loc >= len(df):
+                continue
+            row_ = df.iloc[loc]
+            low_, high_ = float(row_["low"]), float(row_["high"])
+            if side == "long":
+                long_x.append(ts)
+                long_y.append(low_ - offset)
+            else:
+                short_x.append(ts)
+                short_y.append(high_ + offset)
+        except Exception:
+            continue
+    if long_x:
+        fig.add_trace(
+            go.Scatter(
+                x=long_x, y=long_y, mode="markers", name="Weekly High Score (Long)",
+                marker=dict(symbol="star", size=size, color="green"),
+            ),
+            row=row, col=col,
+        )
+    if short_x:
+        fig.add_trace(
+            go.Scatter(
+                x=short_x, y=short_y, mode="markers", name="Weekly High Score (Short)",
+                marker=dict(symbol="star", size=size, color="red"),
+            ),
+            row=row, col=col,
+        )

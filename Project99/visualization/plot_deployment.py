@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional
 import pandas as pd
 import plotly.graph_objects as go
 
-from .overlays import add_candlestick, add_horizontal_line, add_zone_rect
+from .overlays import add_candlestick, add_horizontal_line, add_weekly_star_markers, add_zone_rect
 
 
 def plot_deployment(
@@ -37,3 +37,6 @@ def plot_deployment(
     if show_zone and data.get("zone"):
         ztype, zhigh, zlow, t0, t1 = data["zone"]
         add_zone_rect(fig, t0, t1, zlow, zhigh, row, col, zone_type="demand" if ztype == "demand" else "supply", opacity=0.2)
+
+    # Weekly high-score star markers (last 4 weeks) – 15M only
+    add_weekly_star_markers(fig, df, data.get("weekly_signal", []), row, col, size=10)
