@@ -13,7 +13,7 @@ import pandas as pd
 import streamlit as st
 
 from Project99 import score, get_resampled, CONDITION_NAMES
-from Project99.visualization import build_three_panel_figure
+from Project99.visualization import build_three_panel_figure, compute_weekly_crossings, ensure_asia_hong_kong
 from Project99.visualization.market_data import fetch_15m_data
 
 
@@ -81,8 +81,10 @@ def condition_breakdown(result):
                 st.markdown(f"- **{name}**: {'✅ True' if v else '❌ False'}")
 
 
-def deep_structure_view(asset: str, df_15m: pd.DataFrame, result: dict):
-    """Layer 2 — Score panel + 3 charts + condition breakdown + sidebar toggles."""
+def deep_structure_view(asset: str, df_15m_raw: pd.DataFrame, df_15m_viz: pd.DataFrame, result: dict):
+    """Layer 2 — Score panel + 3 charts + condition breakdown + sidebar toggles.
+    Engine receives raw data only; viz uses df_15m_viz (Asia/Hong_Kong). Crossing uses raw.
+    """
     st.title(f"Deep Structure — {asset}")
     score_panel(result)
     condition_breakdown(result)
@@ -98,9 +100,38 @@ def deep_structure_view(asset: str, df_15m: pd.DataFrame, result: dict):
         show_session = st.checkbox("Session", value=True, key="t_session")
         show_blocking = st.checkbox("Blocking", value=True, key="t_blocking")
 
-    df_1h, df_4h = get_resampled(df_15m, 15)
+    crossings = compute_weekly_crossings(df_15m_raw, score_fn=score, asset_name=asset, lookback_weeks=4)
+    st.subheader("Weekly Crossing Log – 最近四週")
+    if crossings:
+        crossing_rows = []
+        for c in sorted(crossings, key=lambda x: x["datetime"], reverse=True):
+            conds = c.get("conditions") or {}
+            row = {
+                "Date": c.get("date_str", ""),
+                "Time": c.get("time_str", ""),
+                "Asset": c.get("asset", ""),
+                "TF": c.get("tf", ""),
+                "Direction": c.get("direction", ""),
+                "Long": c.get("long_score", ""),
+                "Short": c.get("short_score", ""),
+                "Bias": c.get("bias", ""),
+                "Trend": "✓" if conds.get("trend") else "",
+                "Impulse": "✓" if conds.get("impulse_break") else "",
+                "Stop Hunt": "✓" if conds.get("stop_hunt") else "",
+                "Stop Money": "✓" if conds.get("stop_money") else "",
+                "Zone": "✓" if conds.get("zone") else "",
+                "Fib": "✓" if conds.get("fib") else "",
+                "Session": "✓" if conds.get("session") else "",
+            }
+            crossing_rows.append(row)
+        cross_df = pd.DataFrame(crossing_rows)
+        st.dataframe(cross_df, use_container_width=True, hide_index=True)
+    else:
+        st.caption("No threshold crossings in last 4 weeks (1H).")
+
+    df_1h, df_4h = get_resampled(df_15m_viz, 15)
     fig = build_three_panel_figure(
-        df_15m, df_1h, df_4h, result,
+        df_15m_viz, df_1h, df_4h, result,
         show_trend=show_trend,
         show_impulse=show_impulse,
         show_stop_hunt=show_stop_hunt,
@@ -205,10 +236,11 @@ def main():
 
     assets_data = st.session_state.assets_data
     selected = run_scanner(assets_data)
-    df_15m = assets_data[selected]
-    result = score(df_15m, freq_minutes=15)
+    df_15m_raw = assets_data[selected]
+    result = score(df_15m_raw, freq_minutes=15)
+    df_15m_viz = ensure_asia_hong_kong(df_15m_raw)
     st.divider()
-    deep_structure_view(selected, df_15m, result)
+    deep_structure_view(selected, df_15m_raw, df_15m_viz, result)
 
 
 if __name__ == "__main__":

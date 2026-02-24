@@ -9,13 +9,110 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from .data_provider import get_visualization_data
+from .data_provider import ensure_asia_hong_kong, get_visualization_data
 from .plot_trend import plot_trend
 from .plot_structure import plot_structure
 from .plot_deployment import plot_deployment
 
 # Approximate bars to show per timeframe (Patch 2)
 PLOT_BARS = 500
+
+
+def _resample_15m_to_1h_viz(df_15m: pd.DataFrame) -> pd.DataFrame:
+    """Resample 15m to 1H (same logic as engine). Visualization layer only."""
+    if df_15m is None or df_15m.empty or not isinstance(df_15m.index, pd.DatetimeIndex):
+        return pd.DataFrame()
+    df = df_15m.rename(columns={c: c.lower() for c in df_15m.columns if c.lower() in ("open", "high", "low", "close")})
+    if "open" not in df.columns:
+        return pd.DataFrame()
+    agg = {"open": "first", "high": "max", "low": "min", "close": "last"}
+    return df.resample("1h").agg(agg).dropna(how="all")
+
+
+def _compute_weekly_crossings(
+    df_15m: pd.DataFrame,
+    score_fn: Callable[..., Dict[str, Any]],
+    asset_name: str,
+    lookback_weeks: int = 4,
+) -> List[Dict[str, Any]]:
+    """
+    Weekly crossing detection (1H only). Receives RAW df only; all score_fn calls use raw data.
+    Display date/time converted to Asia/Hong_Kong when storing record.
+    Direction: LONG, SHORT, BIAS_LONG, BIAS_SHORT. Condition source strictly by direction.
+    """
+    out: List[Dict[str, Any]] = []
+    if df_15m is None or df_15m.empty or len(df_15m) < 50:
+        return out
+    if not isinstance(df_15m.index, pd.DatetimeIndex):
+        return out
+    df_1h = _resample_15m_to_1h_viz(df_15m)
+    if df_1h.empty or len(df_1h) < 2:
+        return out
+    cutoff = df_1h.index[-1] - pd.Timedelta(weeks=lookback_weeks)
+    prev_long = -1
+    prev_short = -1
+    prev_abs_bias = -1
+    for ts in df_1h.index:
+        if ts < cutoff:
+            continue
+        slice_15m = df_15m[df_15m.index <= ts]
+        if len(slice_15m) < 50:
+            continue
+        try:
+            res = score_fn(slice_15m, freq_minutes=15)
+        except Exception:
+            continue
+        curr_long = res.get("long_score", 0)
+        curr_short = res.get("short_score", 0)
+        curr_bias = res.get("bias", 0)
+        curr_abs_bias = abs(curr_bias)
+        long_cross = prev_long >= 0 and prev_long < 4 and curr_long >= 4
+        short_cross = prev_short >= 0 and prev_short < 4 and curr_short >= 4
+        bias_cross = prev_abs_bias >= 0 and prev_abs_bias < 2 and curr_abs_bias >= 2
+        prev_long = curr_long
+        prev_short = curr_short
+        prev_abs_bias = curr_abs_bias
+        direction = None
+        if long_cross:
+            direction = "LONG"
+        elif short_cross:
+            direction = "SHORT"
+        elif bias_cross:
+            direction = "BIAS_LONG" if curr_bias > 0 else "BIAS_SHORT"
+        if direction is None:
+            continue
+        if direction == "LONG":
+            conds = res.get("long_conditions", {})
+        elif direction == "SHORT":
+            conds = res.get("short_conditions", {})
+        elif direction == "BIAS_LONG":
+            conds = res.get("long_conditions", {})
+        elif direction == "BIAS_SHORT":
+            conds = res.get("short_conditions", {})
+        else:
+            conds = {}
+        try:
+            if getattr(ts, "tzinfo", None) is None:
+                dt_hkt = ts.tz_localize("UTC").tz_convert("Asia/Hong_Kong")
+            else:
+                dt_hkt = ts.tz_convert("Asia/Hong_Kong")
+        except Exception:
+            dt_hkt = ts
+        date_str = dt_hkt.strftime("%d%m%Y") if hasattr(dt_hkt, "strftime") else str(ts)[:10]
+        time_str = dt_hkt.strftime("%H:%M") if hasattr(dt_hkt, "strftime") else (str(ts)[11:16] if len(str(ts)) >= 16 else "")
+        out.append({
+            "datetime": ts,
+            "date_str": date_str,
+            "time_str": time_str,
+            "asset": asset_name,
+            "tf": "1H",
+            "direction": direction,
+            "long_score": curr_long,
+            "short_score": curr_short,
+            "bias": curr_bias,
+            "conditions": conds,
+        })
+    return out
 
 
 def _slice_lookback(df: Optional[pd.DataFrame], n: int) -> Optional[pd.DataFrame]:
@@ -133,12 +230,17 @@ def build_three_panel_figure(
     df_1h_plot = _slice_lookback(df_1h, PLOT_BARS)
     df_15m_plot = _slice_lookback(df_15m, PLOT_BARS)
 
-    # Patch 5: row heights and spacing
+    # Phase 2.6: timezone alignment to Asia/Hong_Kong (TradingView UTC+8)
+    df_4h_plot = ensure_asia_hong_kong(df_4h_plot)
+    df_1h_plot = ensure_asia_hong_kong(df_1h_plot)
+    df_15m_plot = ensure_asia_hong_kong(df_15m_plot)
+
+    # Patch 5: row heights and spacing (Phase 2.6: vertical_spacing 0.08)
     fig = make_subplots(
         rows=3,
         cols=1,
         shared_xaxes=False,
-        vertical_spacing=0.05,
+        vertical_spacing=0.08,
         subplot_titles=("4H Trend", "1H Structure", "15M Deployment"),
         row_heights=[0.35, 0.35, 0.30],
     )
@@ -171,7 +273,7 @@ def build_three_panel_figure(
     )
 
     fig.update_layout(
-        height=900,
+        height=1100,
         template="plotly_white",
         showlegend=True,
         xaxis_rangeslider_visible=False,

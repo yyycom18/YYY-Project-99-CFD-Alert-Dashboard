@@ -1,11 +1,39 @@
 """
 Gather overlay coordinates for rendering. Uses structural helpers only; no scoring.
 Returns dict keyed by timeframe and overlay type for the viz layer to draw.
+Phase 2.6: Timezone alignment to Asia/Hong_Kong (dashboard time matches TradingView UTC+8).
 """
 
 from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
+
+# Target timezone for dashboard (TradingView UTC+8)
+VIZ_TIMEZONE = "Asia/Hong_Kong"
+
+
+def ensure_asia_hong_kong(df: Optional[pd.DataFrame]) -> Optional[pd.DataFrame]:
+    """
+    Convert OHLC dataframe index to Asia/Hong_Kong. Does not change data values.
+    If index is naive, localize to UTC first, then convert.
+    Resampled 1H/4H should be converted the same way to preserve timezone.
+    """
+    if df is None or df.empty:
+        return df
+    idx = df.index
+    if not isinstance(idx, pd.DatetimeIndex):
+        return df
+    try:
+        if idx.tz is None:
+            idx = idx.tz_localize("UTC")
+        else:
+            idx = idx.tz_convert("UTC")
+        idx = idx.tz_convert(VIZ_TIMEZONE)
+    except Exception:
+        return df
+    out = df.copy()
+    out.index = idx
+    return out
 
 from .. import config as default_config
 from ..structural import (
